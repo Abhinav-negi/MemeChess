@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 /**
  * MemeOverlay Component
  * Displays a meme video on top of a specific chess square
+ * Supports multiple simultaneous memes (checkmate, stalemate, etc.)
  */
 export default function MemeOverlay({ 
   memeData,      // {videoUrl, square, reason}
@@ -12,43 +13,62 @@ export default function MemeOverlay({
   boardSize,     // Width of the chess board in pixels
 }) {
   const videoRef = useRef(null);
-  const [isLoading, setIsLoading] = useState(true);
 
   // Auto-play and handle completion
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
+// Auto-play and handle completion
+useEffect(() => {
+  const video = videoRef.current;
+  if (!video) return;
 
-    const handleCanPlay = () => {
-      setIsLoading(false);
-      video.play().catch(err => {
-        console.error('Video play failed:', err);
-      });
-    };
+  let hasCompleted = false; // Prevent double-calling onComplete
 
-    const handleEnded = () => {
-      console.log('🎬 Meme video ended:', memeData.reason);
+  const completeOnce = () => {
+    if (!hasCompleted) {
+      hasCompleted = true;
       onComplete();
-    };
+    }
+  };
 
-    const handleError = (e) => {
-      console.error('Video loading error:', e);
-      onComplete(); // Continue game even if video fails
-    };
+  const handleCanPlay = () => {
+    video.play().catch(err => {
+      console.error('Video play failed:', err);
+      completeOnce();
+    });
+  };
 
-    video.addEventListener('canplay', handleCanPlay);
-    video.addEventListener('ended', handleEnded);
-    video.addEventListener('error', handleError);
+  const handleEnded = () => {
+    console.log('🎬 Meme video ended naturally:', memeData.reason);
+    completeOnce();
+  };
 
-    // Preload the video
-    video.load();
+  const handleError = (e) => {
+    console.error('❌ Video loading error:', e);
+    completeOnce(); // Skip meme, continue game
+  };
 
-    return () => {
-      video.removeEventListener('canplay', handleCanPlay);
-      video.removeEventListener('ended', handleEnded);
-      video.removeEventListener('error', handleError);
-    };
-  }, [memeData, onComplete]);
+  // ✅ HARD TIMEOUT: Force stop after 4 seconds
+  const forceTimeout = setTimeout(() => {
+    if (video && !video.ended) {
+      console.log('⏱️ 4-second timeout - stopping video:', memeData.reason);
+      video.pause();
+      completeOnce();
+    }
+  }, 4000);
+
+  video.addEventListener('canplay', handleCanPlay);
+  video.addEventListener('ended', handleEnded);
+  video.addEventListener('error', handleError);
+
+  // Preload the video
+  video.load();
+
+  return () => {
+    clearTimeout(forceTimeout);
+    video.removeEventListener('canplay', handleCanPlay);
+    video.removeEventListener('ended', handleEnded);
+    video.removeEventListener('error', handleError);
+  };
+}, [memeData, onComplete]);
 
   if (!memeData) return null;
 
@@ -70,34 +90,16 @@ export default function MemeOverlay({
         height: `${squareSize}px`,
       }}
     >
-      {/* Loading spinner while video loads */}
-      {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-60 rounded-lg">
-          <div className="animate-spin h-8 w-8 border-4 border-yellow-400 border-t-transparent rounded-full" />
-        </div>
-      )}
-
-      {/* Video element */}
+      {/* Video element - clean UI, no spinners */}
       <video
         ref={videoRef}
         className="w-full h-full object-cover rounded-lg shadow-2xl"
-        style={{
-          opacity: isLoading ? 0 : 1,
-          transition: 'opacity 0.3s ease-in-out',
-        }}
         muted={false}
         playsInline
         preload="auto"
       >
         <source src={memeData.videoUrl} type="video/mp4" />
       </video>
-
-      {/* Debug info (remove in production) */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="absolute -bottom-6 left-0 text-xs text-yellow-400 bg-black px-2 py-1 rounded">
-          {memeData.reason} @ {memeData.square}
-        </div>
-      )}
     </div>
   );
 }

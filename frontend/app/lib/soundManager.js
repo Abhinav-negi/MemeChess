@@ -1,12 +1,14 @@
 /**
  * Sound Manager
- * Preloads and plays game sound effects
+ * Preloads and plays game sound effects + background music
  */
 
 class SoundManager {
   constructor() {
     this.sounds = {};
+    this.backgroundMusic = null;
     this.isInitialized = false;
+    this.isMusicEnabled = true;
   }
 
   /**
@@ -17,16 +19,70 @@ class SoundManager {
     if (typeof window === 'undefined') return; // Skip on server-side
     if (this.isInitialized) return;
 
-    // Preload sound files
+    // Preload sound effects
     this.sounds.check = this.createAudio('/sounds/check.mp3');
     this.sounds.checkmate = this.createAudio('/sounds/checkmate.mp3');
     
-    // Optionally preload more sounds:
-    // this.sounds.move = this.createAudio('/sounds/move.mp3');
-    // this.sounds.capture = this.createAudio('/sounds/capture.mp3');
+    // Setup background music
+    this.backgroundMusic = this.createAudio('/sounds/background-music.mp3');
+    this.backgroundMusic.loop = true; // Loop continuously
+    this.backgroundMusic.volume = 0.3; // Quieter for background (30%)
 
     this.isInitialized = true;
     console.log('🔊 Sound Manager initialized');
+  }
+
+  /**
+   * Start background music (call when game starts or user interacts)
+   */
+  startBackgroundMusic() {
+    if (!this.backgroundMusic || !this.isMusicEnabled) return;
+    
+    this.backgroundMusic.play().catch(err => {
+      console.log('Background music autoplay blocked (user interaction needed)');
+    });
+  }
+
+  /**
+   * Pause background music temporarily (during memes)
+   */
+  pauseBackgroundMusic() {
+    if (this.backgroundMusic && !this.backgroundMusic.paused) {
+      this.backgroundMusic.pause();
+    }
+  }
+
+  /**
+   * Resume background music after meme
+   */
+  resumeBackgroundMusic() {
+    if (this.backgroundMusic && this.isMusicEnabled) {
+      this.backgroundMusic.play().catch(err => {
+        console.error('Failed to resume background music:', err);
+      });
+    }
+  }
+
+  /**
+   * Toggle background music on/off
+   */
+  toggleBackgroundMusic() {
+    this.isMusicEnabled = !this.isMusicEnabled;
+    
+    if (this.isMusicEnabled) {
+      this.resumeBackgroundMusic();
+    } else {
+      this.pauseBackgroundMusic();
+    }
+    
+    return this.isMusicEnabled;
+  }
+
+  /**
+   * Check if music is currently enabled
+   */
+  isMusicPlaying() {
+    return this.isMusicEnabled && this.backgroundMusic && !this.backgroundMusic.paused;
   }
 
   /**
