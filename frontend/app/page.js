@@ -1,6 +1,7 @@
 'use client';
 import Chessgame from "./components/chessboard";
 import GameContainer from "./components/GameContainer";
+import TestSocket from "./lib/test";
 
 export default function Home() {
   return (
@@ -8,6 +9,7 @@ export default function Home() {
       {/* <Chessgame/> */}
       {/* <Chessgame/> */}
       <GameContainer/>
+      <TestSocket/>
     </div>
   );
 }

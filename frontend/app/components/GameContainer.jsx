@@ -502,6 +502,7 @@ return (
           evaluation={evaluation}
           mate={mate}
           onReset={resetGame}
+          joinGame={}
         />
       </div>
 
