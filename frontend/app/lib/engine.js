@@ -2,95 +2,64 @@
  * Stockfish Chess Engine Wrapper
  * Handles UCI protocol communication with Stockfish WebAssembly
  */
-
 export default class Engine {
   constructor() {
-    // ✅ Create worker instance
     this.worker = new Worker('/stockfish.wasm.js');
     this.isReady = false;
+    this.stockfishLoaded = false;
     this.messageCallbacks = [];
+    this.currentElo = null;
+    this.currentMultiPV = 1;  // ✅ Track MultiPV setting
     
-    // ✅ Setup message listener
     this.worker.addEventListener('message', (event) => {
       const parsed = this.parseMessage(event.data);
-      
-      // Call all registered callbacks
       this.messageCallbacks.forEach(callback => {
         callback(parsed);
       });
     });
     
-    // ✅ Initialize engine
     this.init();
   }
 
-  /**
-   * Parse Stockfish UCI message into structured data
-   */
   parseMessage(rawMessage) {
     const message = typeof rawMessage === 'string' ? rawMessage : String(rawMessage);
     
     return {
-      // Raw UCI message
       raw: message,
-      
-      // Best move found (e.g., "e2e4")
       bestMove: message.match(/bestmove\s+(\S+)/)?.[1] || null,
-      
-      // Ponder move (opponent's expected response)
       ponder: message.match(/ponder\s+(\S+)/)?.[1] || null,
-      
-      // Position evaluation in centipawns
       positionEvaluation: message.match(/\bcp\s+(-?\d+)/)?.[1] || null,
-      
-      // Mate in X moves
       possibleMate: message.match(/\bmate\s+(-?\d+)/)?.[1] || null,
-      
-      // Principal variation (best line)
       pv: message.match(/\bpv\s+(.+?)(?:\s+string|$)/)?.[1] || null,
-      
-      // Search depth
       depth: parseInt(message.match(/\bdepth\s+(\d+)/)?.[1]) || null,
-      
-      // Nodes searched
+      multipv: parseInt(message.match(/\bmultipv\s+(\d+)/)?.[1]) || null,  // ✅ Parse MultiPV
       nodes: parseInt(message.match(/\bnodes\s+(\d+)/)?.[1]) || null,
-      
-      // Nodes per second
       nps: parseInt(message.match(/\bnps\s+(\d+)/)?.[1]) || null,
-      
-      // Time spent (milliseconds)
       time: parseInt(message.match(/\btime\s+(\d+)/)?.[1]) || null,
-      
-      // Selective depth
       seldepth: parseInt(message.match(/\bseldepth\s+(\d+)/)?.[1]) || null,
     };
   }
 
-  /**
-   * Initialize the engine
-   */
   init() {
     this.postMessage('uci');
     this.postMessage('isready');
     
-    // Wait for readyok
     this.onMessage(({ raw }) => {
+      if (raw === 'uciok') {
+        this.stockfishLoaded = true;
+        console.log('✅ Stockfish UCI OK');
+      }
       if (raw === 'readyok') {
         this.isReady = true;
+        console.log('✅ Stockfish ready');
       }
     });
   }
 
-  /**
-   * Register a message callback
-   */
   onMessage(callback) {
     this.messageCallbacks.push(callback);
   }
 
-  /**
-   * Remove a message callback
-   */
   offMessage(callback) {
     const index = this.messageCallbacks.indexOf(callback);
     if (index > -1) {
@@ -98,67 +67,84 @@ export default class Engine {
     }
   }
 
-  /**
-   * Wait until engine is ready
-   */
-  async waitForReady() {
-    if (this.isReady) return;
-    
-    return new Promise((resolve) => {
-      const checkReady = ({ raw }) => {
-        if (raw === 'readyok') {
-          this.offMessage(checkReady);
-          resolve();
-        }
-      };
-      this.onMessage(checkReady);
-    });
-  }
-
-  /**
-   * Send a UCI command to the engine
-   */
   postMessage(command) {
     this.worker.postMessage(command);
   }
 
   /**
-   * Evaluate a position
-   * @param {string} fen - FEN string of the position
-   * @param {number} depth - Search depth (1-24)
+   * ✅ Set ELO difficulty AND MultiPV
    */
-  evaluatePosition(fen, depth = 15) {
-    // Clamp depth
-    if (depth > 24) depth = 24;
-    if (depth < 1) depth = 1;
+  setElo(eloRating, multiPV = 1) {
+    if (eloRating === null || eloRating >= 2700) {
+      this.postMessage('setoption name UCI_LimitStrength value false');
+      console.log('♟️ Stockfish: Full strength');
+    } else {
+      this.postMessage('setoption name UCI_LimitStrength value true');
+      this.postMessage(`setoption name UCI_Elo value ${eloRating}`);
+      console.log(`♟️ Stockfish ELO: ${eloRating}`);
+    }
     
-    this.postMessage(`position fen ${fen}`);
-    this.postMessage(`go depth ${depth}`);
+    // ✅ Set MultiPV (number of best moves to calculate)
+    this.currentMultiPV = multiPV;
+    this.postMessage(`setoption name MultiPV value ${multiPV}`);
+    console.log(`♟️ Stockfish MultiPV: ${multiPV}`);
+    
+    this.currentElo = eloRating;
   }
 
-  /**
-   * Evaluate with time limit instead of depth
-   * @param {string} fen - FEN string
-   * @param {number} timeMs - Time in milliseconds
-   */
   evaluatePositionTimed(fen, timeMs = 1000) {
     this.postMessage(`position fen ${fen}`);
     this.postMessage(`go movetime ${timeMs}`);
   }
 
   /**
-   * Stop current calculation
+   * ✅ Find best move - but pick the Nth best based on MultiPV
    */
+  findBestMove(fen, callback, thinkTime = 1000, pickMove = 1) {
+    const moves = [];  // Store all PV lines
+    
+    const handleMove = (data) => {
+      // Collect all MultiPV lines
+      if (data.multipv && data.pv) {
+        moves[data.multipv - 1] = {
+          move: data.pv.split(' ')[0],
+          multipv: data.multipv,
+          score: data.positionEvaluation
+        };
+      }
+      
+      // When we get bestmove, pick the Nth option
+      if (data.bestMove) {
+        this.offMessage(handleMove);
+        
+        // ✅ Pick the Nth best move (1 = best, 2 = 2nd best, etc.)
+        const selectedIndex = Math.min(pickMove - 1, moves.length - 1);
+        const selectedMove = moves[selectedIndex]?.move || data.bestMove;
+        
+        console.log(`🎯 Bot options:`, moves.map(m => m.move));
+        console.log(`🎯 Bot picks #${pickMove}: ${selectedMove}`);
+        
+        callback(selectedMove);
+      }
+    };
+
+    this.onMessage(handleMove);
+    this.postMessage(`position fen ${fen}`);
+    this.postMessage(`go movetime ${thinkTime}`);
+  }
+
   stop() {
     this.postMessage('stop');
   }
 
-  /**
-   * Terminate the engine
-   */
   terminate() {
     this.isReady = false;
+    this.stockfishLoaded = false;
     this.postMessage('quit');
     this.worker.terminate();
+  }
+
+  quit() {
+    this.terminate();
   }
 }

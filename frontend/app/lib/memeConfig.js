@@ -1,60 +1,23 @@
 /**
- * Comprehensive Meme Configuration
- * Handles all meme categories with proper game state detection
+ * Comprehensive Meme Configuration with Smart Frequency Control
  */
 
-// Cloudinary base URL
-// const CLOUDINARY_BASE = 'https://res.cloudinary.com/deb9vep8z/video/upload/v1737024000/memes';
 const CLOUDINARY_BASE = 'https://res.cloudinary.com/deb9vep8z/video/upload/v1771148992';
 
-/**
- * Validate that video URL is accessible
- * Falls back to null if network error
- */
-async function validateVideoUrl(url) {
-  try {
-    const response = await fetch(url, { method: 'HEAD' });
-    if (response.ok) {
-      return url;
-    }
-    console.warn('❌ Video not found:', url);
-    return null;
-  } catch (err) {
-    console.error('❌ Network error checking video:', url, err);
-    return null;
-  }
-}
-
-/**
- * Complete Meme Catalog
- * Structure: category: count of videos
- * Videos must be named: category_1.mp4, category_2.mp4, etc.
- */
 const MEME_CATALOG = {
-  // CHECK SITUATION
   check_attacker: 1,
   check_consecutive_king: 1,
   check_consecutive_piece: 1,
   check_king: 2,
-
-  // CHECKMATE
   checkmate_loser_king: 1,
   checkmate_winner_king: 1,
-
-  // GAME PRESSURE
   king_under_pressure: 1,
-
-  // PAWN SPECIAL
   pawn_at_6th_or_7th_rank: 1,
   pawn_promotion: 1,
-
-  // REACTION
   best_move: 4,
   blunder_attacker: 3,
   blunder_victim: 4,
   capture_bonus: 1,
-
-  // SPECIAL CASE
   en_passant: 1,
   resign: 1,
   royal_fork: 1,
@@ -64,79 +27,132 @@ const MEME_CATALOG = {
   under_promotion: 1,
 };
 
-/**
- * Auto-generate video URLs from catalog
- */
 const MEME_VIDEOS = {};
-
 Object.entries(MEME_CATALOG).forEach(([category, count]) => {
   if (count === 0) {
     MEME_VIDEOS[category] = [];
     return;
   }
-
   MEME_VIDEOS[category] = Array.from({ length: count }, (_, i) => {
     const videoNumber = i + 1;
     return `${CLOUDINARY_BASE}/${category}_${videoNumber}.mp4`;
   });
 });
 
-/**
- * Get random video from category
- * Returns null if no videos available (game will skip meme)
- */
 function getRandomVideo(category) {
   const videos = MEME_VIDEOS[category];
   if (!videos || videos.length === 0) {
     console.warn('⚠️ No videos found for category:', category);
     return null;
   }
-  
   const url = videos[Math.floor(Math.random() * videos.length)];
-  
-  // Basic validation: check if URL is properly formed
   if (!url || !url.startsWith('http')) {
     console.error('❌ Invalid video URL for category:', category, url);
     return null;
   }
-  
   return url;
 }
 
+// ✅ Fibonacci sequence for spacing out repeated good moves
+const FIBONACCI = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
+
 /**
- * Detect if move is en passant
+ * ✅ Check if we should show meme based on Fibonacci spacing
+ * @param {number} count - Number of consecutive good/best moves
+ * @returns {boolean}
  */
+function shouldShowBasedOnFibonacci(count) {
+  return FIBONACCI.includes(count);
+}
+
+/**
+ * ✅ Determine if eval change is significant enough
+ * @param {number} evalChange - Absolute evaluation change
+ * @returns {boolean}
+ */
+function isSignificantEvalChange(evalChange) {
+  const THRESHOLD = 1.5; // Show if eval swings by 1.5+ pawns
+  return Math.abs(evalChange) >= THRESHOLD;
+}
+
+/**
+ * ✅ SMART MEME FILTER - Main decision logic
+ * @param {Object} params
+ * @returns {boolean} - Whether to show meme
+ */
+export function shouldShowMeme({
+  moveQuality,
+  evalChange,
+  consecutiveBestMoves = 0,
+  consecutiveGoodMoves = 0,
+  isSpecialEvent = false, // check, checkmate, promotion, etc.
+}) {
+  
+  // ✅ ALWAYS SHOW: Critical game events
+  if (isSpecialEvent) {
+    console.log('🎬 Show meme: Special event');
+    return true;
+  }
+
+  // ✅ ALWAYS SHOW: Blunders (no matter what)
+  if (moveQuality === "Blunder!! 💥") {
+    console.log('🎬 Show meme: Blunder');
+    return true;
+  }
+
+  // ✅ SHOW WITH SPACING: Best moves (Fibonacci pattern)
+  if (moveQuality === "Best Move! 🔥") {
+    const shouldShow = shouldShowBasedOnFibonacci(consecutiveBestMoves);
+    console.log(`🎬 Best move #${consecutiveBestMoves}: ${shouldShow ? 'SHOW' : 'SKIP'}`);
+    return shouldShow;
+  }
+
+  // ✅ RARELY SHOW: Good moves (only if BIG eval change)
+  if (moveQuality === "Good Move ✓") {
+    if (isSignificantEvalChange(evalChange)) {
+      console.log('🎬 Show meme: Good move with big eval change');
+      return true;
+    }
+    console.log('⏭️ Skip meme: Good move without big swing');
+    return false;
+  }
+
+  // ✅ NEVER SHOW: Inaccuracies and mistakes (too common)
+  if (moveQuality === "Inaccuracy ⚠️" || moveQuality === "Mistake ❌") {
+    console.log('⏭️ Skip meme: Minor error');
+    return false;
+  }
+
+  // ✅ FALLBACK: Only show if massive eval swing
+  if (isSignificantEvalChange(evalChange)) {
+    console.log('🎬 Show meme: Massive eval change');
+    return true;
+  }
+
+  console.log('⏭️ Skip meme: Nothing significant');
+  return false;
+}
+
+// Helper functions for special move detection
+
 function isEnPassant(move, game) {
   if (!move.captured) return false;
-  
-  // En passant: pawn captures but target square is empty
   const piece = game.get(move.to);
   if (!piece || piece.type !== 'p') return false;
-  
-  // Check if the captured pawn was on a different rank
   const fromFile = move.from.charCodeAt(0);
   const toFile = move.to.charCodeAt(0);
   const fromRank = parseInt(move.from[1]);
   const toRank = parseInt(move.to[1]);
-  
   return Math.abs(fromFile - toFile) === 1 && fromRank !== toRank;
 }
 
-/**
- * Detect if move is a royal fork (King + Queen both attacked)
- */
 function isRoyalFork(game, move) {
-  // Get all squares attacked by the piece that just moved
   const piece = game.get(move.to);
   if (!piece) return false;
-
   const moves = game.moves({ square: move.to, verbose: true });
   const attackedSquares = moves.map(m => m.to);
-
-  // Check if both enemy king and queen are attacked
   let attacksKing = false;
   let attacksQueen = false;
-
   attackedSquares.forEach(square => {
     const target = game.get(square);
     if (target && target.color !== piece.color) {
@@ -144,69 +160,36 @@ function isRoyalFork(game, move) {
       if (target.type === 'q') attacksQueen = true;
     }
   });
-
   return attacksKing && attacksQueen;
 }
 
-/**
- * Detect if king moved to safety (instead of blocking check)
- */
 function isSafeKingMove(move, wasInCheck) {
   if (!wasInCheck) return false;
-  
   const piece = move.piece;
-  return piece === 'k'; // King moved out of check
+  return piece === 'k';
 }
 
-/**
- * Detect if piece moved to a square attacked by opponent (scared piece)
- */
-function isScaredPiece(game, move) {
-  // Get opponent's possible moves
-  const opponentColor = game.turn(); // Current turn after move
-  
-  // Check if the square where piece landed is attacked
-  const allOpponentMoves = game.moves({ verbose: true });
-  const isAttacked = allOpponentMoves.some(m => m.to === move.to);
-  
-  return isAttacked;
-}
-
-/**
- * Detect pawn at 6th or 7th rank
- */
 function isPawnNearPromotion(game, move) {
   const piece = game.get(move.to);
   if (!piece || piece.type !== 'p') return false;
-  
   const rank = parseInt(move.to[1]);
-  
-  // White pawn at rank 6 or 7, Black pawn at rank 2 or 3
   if (piece.color === 'w') return rank === 6 || rank === 7;
   if (piece.color === 'b') return rank === 2 || rank === 3;
-  
   return false;
 }
 
-/**
- * Detect under-promotion (pawn promotes to anything except queen)
- */
 function isUnderPromotion(move) {
   return move.promotion && move.promotion !== 'q';
 }
 
-/**
- * Find king position for a given color
- */
 function findKingSquare(game, color) {
   const board = game.board();
-  
   for (let rank = 0; rank < 8; rank++) {
     for (let file = 0; file < 8; file++) {
       const square = board[rank][file];
       if (square && square.type === 'k' && square.color === color) {
-        const fileChar = String.fromCharCode(97 + file); // a-h
-        const rankNum = 8 - rank; // 8-1
+        const fileChar = String.fromCharCode(97 + file);
+        const rankNum = 8 - rank;
         return fileChar + rankNum;
       }
     }
@@ -215,8 +198,7 @@ function findKingSquare(game, color) {
 }
 
 /**
- * Main meme selection function
- * Returns single meme or array of memes (for stalemate)
+ * ✅ Main meme selection with special event detection
  */
 export function selectMeme({
   moveQuality,
@@ -227,22 +209,46 @@ export function selectMeme({
   isCheck,
   isCheckmate,
   isStalemate,
-  isDraw,
   targetSquare,
-  fromSquare,
   wasInCheck,
   consecutiveChecks = 0,
-  hasShownPressure = false,
+  hasShownPressure = { white: false, black: false },
   currentEvaluation = 0,
+  evalChange = 0,
+  consecutiveBestMoves = 0,
+  consecutiveGoodMoves = 0,
 }) {
   
-  // PRIORITY 1: Game Over States
+  // ✅ Detect if this is a special event
+  const isSpecialEvent = 
+    isCheckmate || 
+    isStalemate || 
+    isCheck || 
+    isRoyalFork(game, move) || 
+    isEnPassant(move, game) || 
+    move.promotion ||
+    consecutiveChecks >= 3;
+
+  // ✅ SMART FILTER: Should we show ANY meme?
+  const shouldShow = shouldShowMeme({
+    moveQuality,
+    evalChange,
+    consecutiveBestMoves,
+    consecutiveGoodMoves,
+    isSpecialEvent,
+  });
+
+  if (!shouldShow) {
+    console.log('⏭️ Meme filtered out by smart system');
+    return null;
+  }
+
+  // ✅ If we passed the filter, select appropriate meme
   
-  // Stalemate - ALL pieces show meme
+  // PRIORITY 1: Game Over
   if (isStalemate) {
     const board = game.board();
     const memes = [];
-    
     for (let rank = 0; rank < 8; rank++) {
       for (let file = 0; file < 8; file++) {
         const square = board[rank][file];
@@ -250,7 +256,6 @@ export function selectMeme({
           const fileChar = String.fromCharCode(97 + file);
           const rankNum = 8 - rank;
           const squareName = fileChar + rankNum;
-          
           memes.push({
             videoUrl: getRandomVideo('stalemate'),
             square: squareName,
@@ -259,15 +264,12 @@ export function selectMeme({
         }
       }
     }
-    
     return { type: 'multiple', memes };
   }
   
-  // Checkmate
   if (isCheckmate) {
-    const winnerColor = game.turn() === 'w' ? 'b' : 'w'; // Opponent won
+    const winnerColor = game.turn() === 'w' ? 'b' : 'w';
     const loserColor = game.turn();
-    
     const winnerKing = findKingSquare(game, winnerColor);
     const loserKing = findKingSquare(game, loserColor);
     
@@ -289,8 +291,6 @@ export function selectMeme({
   }
   
   // PRIORITY 2: Special Moves
-  
-  // Royal Fork (King + Queen attacked)
   if (isRoyalFork(game, move)) {
     return {
       type: 'single',
@@ -300,7 +300,6 @@ export function selectMeme({
     };
   }
   
-  // En Passant
   if (isEnPassant(move, game)) {
     return {
       type: 'single',
@@ -310,7 +309,6 @@ export function selectMeme({
     };
   }
   
-  // Under Promotion
   if (isUnderPromotion(move)) {
     return {
       type: 'single',
@@ -320,7 +318,6 @@ export function selectMeme({
     };
   }
   
-  // Pawn Promotion (to queen)
   if (move.promotion === 'q') {
     return {
       type: 'single',
@@ -330,53 +327,25 @@ export function selectMeme({
     };
   }
   
-  // PRIORITY 3: Check Situations
-  
+  // PRIORITY 3: Check (single meme)
   if (isCheck) {
-    // Consecutive checks (3+)
     if (consecutiveChecks >= 3) {
-      const checkingPiece = targetSquare;
-      const checkedKing = findKingSquare(game, game.turn());
-      
       return {
-        type: 'multiple',
-        memes: [
-          {
-            videoUrl: getRandomVideo('check_consecutive_piece'),
-            square: checkingPiece,
-            reason: 'check_consecutive_piece',
-          },
-          {
-            videoUrl: getRandomVideo('check_consecutive_king'),
-            square: checkedKing,
-            reason: 'check_consecutive_king',
-          }
-        ]
+        type: 'single',
+        videoUrl: getRandomVideo('check_consecutive_piece'),
+        square: targetSquare,
+        reason: 'check_consecutive',
       };
     }
     
-    // Regular check - show on both attacker and king
-    const checkingPiece = targetSquare;
-    const checkedKing = findKingSquare(game, game.turn());
-    
     return {
-      type: 'multiple',
-      memes: [
-        {
-          videoUrl: getRandomVideo('check_attacker'),
-          square: checkingPiece,
-          reason: 'check_attacker',
-        },
-        {
-          videoUrl: getRandomVideo('check_king'),
-          square: checkedKing,
-          reason: 'check_king',
-        }
-      ]
+      type: 'single',
+      videoUrl: getRandomVideo('check_attacker'),
+      square: targetSquare,
+      reason: 'check_attacker',
     };
   }
   
-  // Safe King (moved out of check)
   if (isSafeKingMove(move, wasInCheck)) {
     return {
       type: 'single',
@@ -386,35 +355,30 @@ export function selectMeme({
     };
   }
   
-// PRIORITY 4: Position Pressure (show once per game per side)
-
-// King under pressure (losing badly, eval threshold ±3.5)
-if (!hasShownPressure.white && currentEvaluation < -3.5) {
-  // White is losing (eval is negative from White's POV)
-  const kingSquare = findKingSquare(game, 'w');
-  return {
-    type: 'single',
-    videoUrl: getRandomVideo('king_under_pressure'),
-    square: kingSquare,
-    reason: 'king_under_pressure',
-    showOnceFor: 'white', // Signal which side to mark
-  };
-}
-
-if (!hasShownPressure.black && currentEvaluation > 3.5) {
-  // Black is losing (eval is positive from White's POV)
-  const kingSquare = findKingSquare(game, 'b');
-  return {
-    type: 'single',
-    videoUrl: getRandomVideo('king_under_pressure'),
-    square: kingSquare,
-    reason: 'king_under_pressure',
-    showOnceFor: 'black', // Signal which side to mark
-  };
-}
+  // PRIORITY 4: King Under Pressure (once per game per side)
+  if (!hasShownPressure.white && currentEvaluation < -3.5) {
+    const kingSquare = findKingSquare(game, 'w');
+    return {
+      type: 'single',
+      videoUrl: getRandomVideo('king_under_pressure'),
+      square: kingSquare,
+      reason: 'king_under_pressure',
+      showOnceFor: 'white',
+    };
+  }
+  
+  if (!hasShownPressure.black && currentEvaluation > 3.5) {
+    const kingSquare = findKingSquare(game, 'b');
+    return {
+      type: 'single',
+      videoUrl: getRandomVideo('king_under_pressure'),
+      square: kingSquare,
+      reason: 'king_under_pressure',
+      showOnceFor: 'black',
+    };
+  }
   
   // PRIORITY 5: Pawn Progress
-  
   if (isPawnNearPromotion(game, move)) {
     return {
       type: 'single',
@@ -424,12 +388,9 @@ if (!hasShownPressure.black && currentEvaluation > 3.5) {
     };
   }
   
-  // PRIORITY 6: Move Quality Reactions
-  
-  // Blunders (alternate perspective)
+  // PRIORITY 6: Move Quality
   if (moveQuality === "Blunder!! 💥") {
     const useVictimPerspective = blunderCount % 2 === 1;
-    
     return {
       type: 'single',
       videoUrl: getRandomVideo(
@@ -440,8 +401,7 @@ if (!hasShownPressure.black && currentEvaluation > 3.5) {
     };
   }
   
-  // Best/Good moves
-  if (moveQuality === "Best Move! 🔥" || moveQuality === "Good Move ✓") {
+  if (moveQuality === "Best Move! 🔥") {
     return {
       type: 'single',
       videoUrl: getRandomVideo('best_move'),
@@ -450,52 +410,34 @@ if (!hasShownPressure.black && currentEvaluation > 3.5) {
     };
   }
   
-  // PRIORITY 7: Scared Piece (moved to attacked square)
-  
-  if (isScaredPiece(game, move)) {
+  if (moveQuality === "Good Move ✓") {
     return {
       type: 'single',
-      videoUrl: getRandomVideo('scared_piece'),
+      videoUrl: getRandomVideo('best_move'),
       square: targetSquare,
-      reason: 'scared_piece',
+      reason: 'good_move',
     };
   }
   
-  // PRIORITY 8: Captures
-  
+  // PRIORITY 7: High-Value Captures
   if (isCapture) {
-    return {
-      type: 'single',
-      videoUrl: getRandomVideo('capture_bonus'),
-      square: targetSquare,
-      reason: 'capture',
-    };
+    const capturedPiece = move.captured;
+    const highValuePieces = ['q', 'r'];
+    if (highValuePieces.includes(capturedPiece)) {
+      return {
+        type: 'single',
+        videoUrl: getRandomVideo('capture_bonus'),
+        square: targetSquare,
+        reason: 'capture_high_value',
+      };
+    }
   }
   
-  // No meme for this move
   return null;
 }
 
-/**
- * Evaluation threshold for showing memes
- */
-export function shouldShowMeme(evalChange, moveQuality) {
-  // Always show for these
-  if (moveQuality === "Blunder!! 💥") return true;
-  if (moveQuality === "Best Move! 🔥") return true;
-  if (moveQuality === "Good Move ✓") return true;
-  
-  // For other moves, check evaluation swing
-  const EVAL_THRESHOLD = 0.5;
-  return Math.abs(evalChange) >= EVAL_THRESHOLD;
-}
-
-/**
- * Handle resign (to be called manually)
- */
 export function getResignMeme(resigningColor, game) {
   const kingSquare = findKingSquare(game, resigningColor);
-  
   return {
     type: 'single',
     videoUrl: getRandomVideo('resign'),

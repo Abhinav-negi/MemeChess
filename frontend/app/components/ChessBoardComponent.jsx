@@ -4,21 +4,23 @@ import { useEffect, useState } from "react";
 import { Chess } from "chess.js";
 import { Chessboard } from "react-chessboard";
 
-export default function ChessBoardComponent({ game, position, updateGame }) {
+export default function ChessBoardComponent({ 
+  game, 
+  position, 
+  updateGame, 
+  boardOrientation = 'white',
+  playerColor = 'white'  // ✅ ADD THIS
+}) {
 
   const [boardSize, setBoardSize] = useState(600);
   const [moveFrom, setMoveFrom] = useState("");
   const [optionSquares, setOptionSquares] = useState({});
   const checkHighlight = getCheckOrMateHighlight(game);
   const combinedSquareStyles = {
-  ...optionSquares,
-  ...checkHighlight,
-};
+    ...optionSquares,
+    ...checkHighlight,
+  };
 
-
-  /* -------------------------------------------------------
-     RESPONSIVE BOARD
-  ------------------------------------------------------- */
   useEffect(() => {
     function updateSize() {
       const size = Math.min(window.innerWidth, window.innerHeight);
@@ -30,11 +32,22 @@ export default function ChessBoardComponent({ game, position, updateGame }) {
     return () => window.removeEventListener("resize", updateSize);
   }, []);
 
-  /* -------------------------------------------------------
-     MOVE HIGHLIGHTING
-  ------------------------------------------------------- */
-  
+  // ✅ CHECK IF PLAYER CAN MOVE PIECE
+  function isPlayerPiece(square) {
+    const piece = game.get(square);
+    if (!piece) return false;
+    
+    const pieceColor = piece.color === 'w' ? 'white' : 'black';
+    return pieceColor === playerColor;
+  }
+
   function getMoveOptions(square) {
+    // ✅ Only allow moves for player's pieces
+    if (!isPlayerPiece(square)) {
+      setOptionSquares({});
+      return false;
+    }
+
     const moves = game.moves({ square, verbose: true });
 
     if (moves.length === 0) {
@@ -63,49 +76,41 @@ export default function ChessBoardComponent({ game, position, updateGame }) {
     return true;
   }
 
-  /* -------------------------------------------------------
-     CHECK / CHECKMATE HIGHLIGHT
-  ------------------------------------------------------- */
-function getCheckOrMateHighlight(currentGame) {
-  if (!currentGame.isCheck()) return {};
+  function getCheckOrMateHighlight(currentGame) {
+    if (!currentGame.isCheck()) return {};
 
-  const board = currentGame.board();
-  let checkedKingSquare = "";
-  let winningKingSquare = "";
+    const board = currentGame.board();
+    let checkedKingSquare = "";
+    let winningKingSquare = "";
 
-  board.forEach((row, rowIndex) => {
-    row.forEach((square, colIndex) => {
-      if (square && square.type === "k") {
-        const file = "abcdefgh"[colIndex];
-        const rank = 8 - rowIndex;
-        const squareName = file + rank;
+    board.forEach((row, rowIndex) => {
+      row.forEach((square, colIndex) => {
+        if (square && square.type === "k") {
+          const file = "abcdefgh"[colIndex];
+          const rank = 8 - rowIndex;
+          const squareName = file + rank;
 
-        if (square.color === currentGame.turn()) {
-          checkedKingSquare = squareName;
-        } else {
-          winningKingSquare = squareName;
+          if (square.color === currentGame.turn()) {
+            checkedKingSquare = squareName;
+          } else {
+            winningKingSquare = squareName;
+          }
         }
-      }
+      });
     });
-  });
 
-  if (currentGame.isCheckmate()) {
+    if (currentGame.isCheckmate()) {
+      return {
+        [checkedKingSquare]: { background: "rgba(255, 0, 0, 0.7)" },
+        [winningKingSquare]: { background: "rgba(0, 200, 0, 0.7)" },
+      };
+    }
+
     return {
       [checkedKingSquare]: { background: "rgba(255, 0, 0, 0.7)" },
-      [winningKingSquare]: { background: "rgba(0, 200, 0, 0.7)" },
     };
   }
 
-  return {
-    [checkedKingSquare]: { background: "rgba(255, 0, 0, 0.7)" },
-  };
-}
-
-
-
-  /* -------------------------------------------------------
-     CLICK-TO-MOVE
-  ------------------------------------------------------- */
   function onSquareClick({ square, piece }) {
     if (!moveFrom && piece) {
       const hasMoves = getMoveOptions(square);
@@ -141,11 +146,13 @@ function getCheckOrMateHighlight(currentGame) {
     setOptionSquares({});
   }
 
-  /* -------------------------------------------------------
-     DRAG-AND-DROP
-  ------------------------------------------------------- */
   function onPieceDrop({ sourceSquare, targetSquare }) {
     if (!targetSquare) return false;
+
+    // ✅ Only allow dragging player's pieces
+    if (!isPlayerPiece(sourceSquare)) {
+      return false;
+    }
 
     const gameCopy = new Chess(game.fen());
 
@@ -166,25 +173,16 @@ function getCheckOrMateHighlight(currentGame) {
     return true;
   }
 
-//   const chessOption= {
-//           position={position}
-//       boardWidth={boardSize}
-//       onPieceDrop={onPieceDrop}
-//       onSquareClick={onSquareClick}
-//       squareStyles={optionSquares}
-//       id="click-or-drag-to-move"
-//   }
-
-    const chessboardOptions = {
+  const chessboardOptions = {
     onPieceDrop,
     onSquareClick,
     position: position,
+    boardOrientation: boardOrientation,
     squareStyles: combinedSquareStyles,
     id: "click-or-drag-to-move",
   };
+
   return (
-    <Chessboard
-    options={chessboardOptions}
-    />
+    <Chessboard options={chessboardOptions} />
   );
 }

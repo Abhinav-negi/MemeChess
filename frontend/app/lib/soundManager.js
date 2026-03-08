@@ -22,6 +22,12 @@ class SoundManager {
     // Preload sound effects
     this.sounds.check = this.createAudio('/sounds/check.mp3');
     this.sounds.checkmate = this.createAudio('/sounds/checkmate.mp3');
+    this.sounds.move = this.createAudio('/sounds/move.mp3');
+    this.sounds.castle = this.createAudio('/sounds/castle.mp3');
+    this.sounds.stalemate = this.createAudio('/sounds/stalemate.mp3');
+    this.sounds.start = this.createAudio('/sounds/start.mp3');
+    this.sounds.capture = this.createAudio('/sounds/capture.mp3');
+    
     
     // Setup background music
     this.backgroundMusic = this.createAudio('/sounds/background-music.mp3');
