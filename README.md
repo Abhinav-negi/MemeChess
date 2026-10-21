@@ -55,7 +55,10 @@ Upload `<category>_<n>.mp4` to the Cloudinary folder, then set the count in `MEM
 3. **Authentication → Providers → enable Anonymous sign-ins.**
 4. Put the project URL and anon key in `.env.local` (and in Vercel env vars).
 
-Writes go through `join_game`, `make_move` and `resign_game`, which enforce seats, turn order and stale-move rejection. Move legality is checked client-side with chess.js.
+Security model:
+- Only the two players can read a game row, so game ids can't be listed. Spectators and late joiners load it by exact id through `get_game`.
+- Every write goes through `join_game`, `make_move` and `resign_game`. These enforce seats (only while waiting), turn order, one well-formed SAN move per call, consistent results, and stale-move rejection.
+- Move *legality* is still checked client-side with chess.js. Replay moves server-side (Edge Function) before using results for anything that matters.
 
 ## Deploy
 Vercel: import the repo, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`, deploy. Run `npm run check:memes` first.

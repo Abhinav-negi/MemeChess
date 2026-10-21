@@ -1,11 +1,25 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Chess } from 'chess.js';
 import { ensureUser, supabase } from '@/lib/supabase';
+
+const SPECTATOR_POLL_MS = 3000;
+
+// The server stores a space-separated SAN list; the game hook takes PGN.
+function movesToPgn(moves) {
+  const game = new Chess();
+  for (const san of moves.split(' ').filter(Boolean)) game.move(san);
+  return game.pgn();
+}
+
+const fetchGame = (gameId) => supabase.rpc('get_game', { p_id: gameId }).then(({ data }) => data);
 
 /**
  * Syncs a `useMemeChess` game with the Supabase `games` row `gameId`.
- * Joins an empty seat if there is one; otherwise the visitor spectates.
+ * Joins an empty seat while the game is waiting; otherwise the visitor spectates.
+ * Players get live updates over Realtime; spectators can't read the row directly
+ * (RLS), so they poll get_game.
  */
 export function useOnlineGame(gameId, chess) {
   const { loadPgn, resign, resigned } = chess;
@@ -17,17 +31,18 @@ export function useOnlineGame(gameId, chess) {
   const applyRow = useCallback(
     (next) => {
       if (!next) return;
-      // Ignore out-of-order realtime events.
+      // Ignore out-of-order updates.
       if (rowRef.current && next.move_count < rowRef.current.move_count) return;
       rowRef.current = next;
       setRow(next);
-      loadPgn(next.pgn);
+      loadPgn(movesToPgn(next.moves));
     },
     [loadPgn]
   );
 
   useEffect(() => {
     let channel;
+    let poll;
     let cancelled = false;
     (async () => {
       try {
@@ -38,16 +53,20 @@ export function useOnlineGame(gameId, chess) {
         if (joinError) throw joinError;
         if (cancelled) return;
         applyRow(data);
+
+        const seated = data.white === user.id || data.black === user.id;
+        if (!seated) {
+          poll = setInterval(() => fetchGame(gameId).then(applyRow), SPECTATOR_POLL_MS);
+          return;
+        }
         channel = supabase
           .channel(`game:${gameId}`)
           .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` }, (payload) =>
             applyRow(payload.new)
           )
           .subscribe((status) => {
-            // After a reconnect, fetch once in case events were missed.
-            if (status === 'SUBSCRIBED') {
-              supabase.from('games').select('*').eq('id', gameId).single().then(({ data: fresh }) => applyRow(fresh));
-            }
+            // After a (re)connect, fetch once in case events were missed.
+            if (status === 'SUBSCRIBED') fetchGame(gameId).then(applyRow);
           });
       } catch (e) {
         if (!cancelled) setError(e.message?.includes('not found') ? 'This game does not exist.' : e.message);
@@ -55,6 +74,7 @@ export function useOnlineGame(gameId, chess) {
     })();
     return () => {
       cancelled = true;
+      clearInterval(poll);
       if (channel) supabase.removeChannel(channel);
     };
   }, [gameId, applyRow]);
@@ -66,19 +86,19 @@ export function useOnlineGame(gameId, chess) {
 
   const myColor = !row || !userId ? null : row.white === userId ? 'w' : row.black === userId ? 'b' : null;
 
-  /** Call after the move was applied locally. Rolls back to the server state on conflict. */
+  /** Call after the move was applied locally: sends just that move. Rolls back to the server state on conflict. */
   const sendMove = useCallback(
     async (game, result) => {
       const current = rowRef.current;
       const { data, error: moveError } = await supabase.rpc('make_move', {
         p_id: gameId,
         p_move_count: current.move_count,
-        p_pgn: game.pgn(),
+        p_san: game.history().at(-1),
         p_winner: result?.winner ?? null,
         p_reason: result?.reason ?? null,
       });
       if (moveError) {
-        const { data: fresh } = await supabase.from('games').select('*').eq('id', gameId).single();
+        const fresh = await fetchGame(gameId);
         rowRef.current = null;
         applyRow(fresh);
         return;
