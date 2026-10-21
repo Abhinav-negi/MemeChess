@@ -1,17 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Chess } from 'chess.js';
 import { ensureUser, supabase } from '@/lib/supabase';
+import { movesToPgn } from '@/lib/onlineMoves';
 
 const SPECTATOR_POLL_MS = 3000;
-
-// The server stores a space-separated SAN list; the game hook takes PGN.
-function movesToPgn(moves) {
-  const game = new Chess();
-  for (const san of moves.split(' ').filter(Boolean)) game.move(san);
-  return game.pgn();
-}
 
 const fetchGame = (gameId) => supabase.rpc('get_game', { p_id: gameId }).then(({ data }) => data);
 
@@ -35,7 +28,9 @@ export function useOnlineGame(gameId, chess) {
       if (rowRef.current && next.move_count < rowRef.current.move_count) return;
       rowRef.current = next;
       setRow(next);
-      loadPgn(movesToPgn(next.moves));
+      const { pgn, corrupt } = movesToPgn(next.moves);
+      loadPgn(pgn);
+      if (corrupt) setError('This game contains an illegal move and can’t continue.');
     },
     [loadPgn]
   );

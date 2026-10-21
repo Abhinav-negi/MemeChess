@@ -108,3 +108,14 @@ describe('classifyMove', () => {
     expect(classifyMove(5)).toBe('blunder');
   });
 });
+
+describe('online move replay', () => {
+  it('stops at an illegal move instead of throwing', async () => {
+    const { movesToPgn } = await import('../lib/onlineMoves');
+    expect(movesToPgn('e4 e5').corrupt).toBe(false);
+    const bad = movesToPgn('e4 e5 Ke8 Nf3');
+    expect(bad.corrupt).toBe(true);
+    expect(bad.pgn).toContain('1. e4 e5');
+    expect(bad.pgn).not.toContain('Nf3');
+  });
+});
