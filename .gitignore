@@ -37,6 +37,22 @@ yarn-error.log*
 # vercel
 .vercel
 
+# supabase cli local state
+supabase/.branches
+supabase/.temp
+
+# secrets / keys
+*.key
+*.p12
+*.pfx
+service-account*.json
+
+# editors / os
+.idea/
+.vscode/
+Thumbs.db
+*.log
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
